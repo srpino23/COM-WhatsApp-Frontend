@@ -12,6 +12,8 @@ function App() {
   const [autoScroll, setAutoScroll] = useState(true);
   const [image, setImage] = useState(null);
   const [showImagePopup, setShowImagePopup] = useState(false);
+  const [alertContacts, setAlertContacts] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
 
   const fetchContacts = async () => {
     try {
@@ -40,6 +42,8 @@ function App() {
 
   useEffect(() => {
     fetchContacts();
+    const interval = setInterval(fetchContacts, 1000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -83,6 +87,7 @@ function App() {
       formData.append("image", image);
 
       try {
+        setIsLoading(true); // Mostrar efecto de carga
         await axios.post(
           "http://172.25.67.77:2400/api/message/sendMessageWithImage",
           formData,
@@ -95,9 +100,11 @@ function App() {
         setMessage("");
         setImage(null);
         setShowImagePopup(false);
-        fetchMessages(selectedContact.contactId);
+        setTimeout(() => fetchMessages(selectedContact.contactId), 1000);
       } catch (error) {
         console.error("Error sending message with image:", error);
+      } finally {
+        setIsLoading(false); // Ocultar efecto de carga
       }
     }
   };
@@ -109,21 +116,19 @@ function App() {
   };
 
   const scrollToBottom = (smooth = true) => {
-    if (autoScroll) {
-      messagesEndRef.current?.scrollIntoView({
-        behavior: smooth ? "smooth" : "auto",
-      });
-    }
+    setTimeout(() => {
+      if (autoScroll) {
+        messagesEndRef.current?.scrollIntoView({
+          behavior: smooth ? "smooth" : "auto",
+        });
+      }
+    }, 50);
   };
 
   const handleScroll = () => {
     if (chatMessagesRef.current) {
       const { scrollTop, scrollHeight, clientHeight } = chatMessagesRef.current;
-      if (scrollHeight - scrollTop === clientHeight) {
-        setAutoScroll(true);
-      } else {
-        setAutoScroll(false);
-      }
+      setAutoScroll(scrollHeight - scrollTop === clientHeight);
     }
   };
 
@@ -160,14 +165,14 @@ function App() {
         return (
           <>
             <img src={mediaUrl} alt="media" className="chatImage" />
-            <p>{msg.message}</p>
+            {msg.message && <p>{msg.message}</p>}
           </>
         );
       } else if (["mp4", "webm"].includes(mediaType)) {
         return (
           <>
             <video src={mediaUrl} controls className="chatVideo" />
-            <p>{msg.message}</p>
+            {msg.message && <p>{msg.message}</p>}
           </>
         );
       } else if (["ogg", "mp3"].includes(mediaType)) {
@@ -189,6 +194,32 @@ function App() {
     return <p>{msg.message}</p>;
   };
 
+  const toggleAlertContact = (contactId) => {
+    setAlertContacts((prevAlertContacts) => {
+      if (prevAlertContacts.includes(contactId)) {
+        return prevAlertContacts.filter((id) => id !== contactId);
+      } else {
+        return [...prevAlertContacts, contactId];
+      }
+    });
+  };
+
+  const sortedContacts = [...contacts].sort((a, b) => {
+    if (
+      alertContacts.includes(a.contactId) &&
+      !alertContacts.includes(b.contactId)
+    ) {
+      return -1;
+    }
+    if (
+      !alertContacts.includes(a.contactId) &&
+      alertContacts.includes(b.contactId)
+    ) {
+      return 1;
+    }
+    return 0;
+  });
+
   return (
     <div className="container">
       <div className="smallBlock">Total de mensajes hoy</div>
@@ -200,10 +231,12 @@ function App() {
           <input type="text" placeholder="Buscar..." />
         </div>
         <div className="contactList">
-          {contacts.map((contact) => (
+          {sortedContacts.map((contact) => (
             <div
               key={contact._id}
-              className="contactItem"
+              className={`contactItem ${
+                alertContacts.includes(contact.contactId) ? "alert" : ""
+              }`}
               onClick={() => {
                 setSelectedContact(contact);
                 fetchMessages(contact.contactId);
@@ -216,6 +249,14 @@ function App() {
                 <div className="contactName">{contact.name}</div>
                 <div className="contactPhone">{contact.phoneNumber}</div>
               </div>
+              <button
+                className="alertButton"
+                onClick={() => toggleAlertContact(contact.contactId)}
+              >
+                {alertContacts.includes(contact.contactId)
+                  ? "Quitar alerta"
+                  : "Poner en alerta"}
+              </button>
             </div>
           ))}
         </div>
@@ -280,7 +321,12 @@ function App() {
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                   />
-                  <button onClick={handleSendMessageWithImage}>Enviar</button>
+                  <button
+                    onClick={handleSendMessageWithImage}
+                    disabled={isLoading}
+                  >
+                    {isLoading ? "Enviando..." : "Enviar"}
+                  </button>
                   <button onClick={() => setShowImagePopup(false)}>
                     Cancelar
                   </button>
